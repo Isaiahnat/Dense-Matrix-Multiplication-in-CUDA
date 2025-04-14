@@ -268,8 +268,9 @@ void run_test(int size) {
 
 
 
-int main() {
+int main(int argc, char * argv[]) {
 
-    run_test(4096);
+    int size = std::stoi(argv[1]);
+    run_test(size);
     return 0;
 }
