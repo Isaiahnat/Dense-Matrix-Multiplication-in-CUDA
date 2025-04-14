@@ -107,11 +107,11 @@ void compare_matrix(float * C_alg, float * C_cub, int size, float err) {
 // Assumes size is a multiple of 32
 __global__ void mat_mul(const float * A, const float * B, float * C, int size) {
 
-    // Compute row index of result in C
-    int row = blockIdx.x*blockDim.x + threadIdx.x;
-
     // Compute col index of result in C
-    int col = blockIdx.y*blockDim.y + threadIdx.y;
+    int col = blockIdx.x*blockDim.x + threadIdx.x;
+
+    // Compute row index of result in C
+    int row = blockIdx.y*blockDim.y + threadIdx.y;
 
     // Compute in memory index
     int index = row*size + col;
@@ -234,7 +234,7 @@ void run_test(int size) {
     double gf_per_s_alg = flops_alg * 1.0e-9f /(ms_elapsed_alg / 1000.0f);
 
     // Print diagnostics
-    printf("Naive Algorithm Performance Metrics: \n %.2f GFlops/s \n %.3f ms\n", gf_per_s_alg, ms_elapsed_alg);
+    printf("Global Memory Thread Coelesce Algorithm Performance Metrics: \n %.2f GFlops/s \n %.3f ms\n", gf_per_s_alg, ms_elapsed_alg);
 
     // Copy reuslt back to host memory
     device_to_host(C_d_cub, C_cub, size);
