@@ -12,6 +12,9 @@
 #include <helper_functions.h>
 #include <helper_cuda.h>
 
+// Define Block Size
+#define BLOCK_SIZE 32
+
 
 // Returns a matrix filled with garbage values
 float * get_matrix(int dim) {
@@ -103,9 +106,13 @@ void compare_matrix(float * C_alg, float * C_cub, int size, float err) {
     std::cout << "Passed" << std::endl;
 }
 
-// Global Thread Coelesce Matrix Multiplication Algorithm
-// Assumes size is a multiple of 32
+// Shared Memory Cache Blocking Matrix Multiplication Algorithm
+// Assumes size is a multiple of BLOCK_SIZE
 __global__ void mat_mul(const float * A, const float * B, float * C, int size) {
+
+    // Initialize Scratch Space
+    __shared__ float A_shared[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ float B_shared[BLOCK_SIZE][BLOCK_SIZE];
 
     // Compute col index of result in C
     int col = blockIdx.x*blockDim.x + threadIdx.x;
@@ -118,16 +125,42 @@ __global__ void mat_mul(const float * A, const float * B, float * C, int size) {
 
     float total = 0.0;
 
-    // Compute value for (row, col)
-    for (int i = 0; i < size; i++) {
 
-        total += A[row * size + i]*B[col + size*i];
+    for (int i = 0; i < size; i += BLOCK_SIZE) {
+
+        // Each thread is responsible for loading a float
+        // from global memory to shared memory
+
+
+        // Index of global mem that thread loads from
+        int A_index_global = row * size + threadIdx.x + i;
+        int B_index_global = (i+threadIdx.y) * size + col;
+
+        
+        // Load into shared memory
+        A_shared[threadIdx.y][threadIdx.x] = A[A_index_global];
+        B_shared[threadIdx.y][threadIdx.x] = B[B_index_global];
+
+        // Let threads load data into shared mem        
+        __syncthreads();
+        
+        
+        // Compute partial totals
+        for (int j = 0; j < BLOCK_SIZE; j++) {
+
+            total += A_shared[threadIdx.y][j] *
+            B_shared[j][threadIdx.x];
+
+        }
+
+        // Let threads finish computing before loading next block
+        __syncthreads();
     }
 
     // Store the result in device memory
     C[index] = total;
-
 }
+
 
 
 
@@ -154,10 +187,10 @@ void run_test(int size) {
     float beta = 0.0f;
 
     // set two dimensional grid, enough to cover matrix
-    dim3 grid_dim(size/32, size/32, 1); 
+    dim3 grid_dim(size/BLOCK_SIZE, size/BLOCK_SIZE, 1); 
 
     // set two dimensional thread block of 1024 threads
-    dim3 block_dim(32, 32, 1);
+    dim3 block_dim(BLOCK_SIZE, BLOCK_SIZE, 1);
     
     // initialize cublas handle
     cublasHandle_t handle;
@@ -234,7 +267,7 @@ void run_test(int size) {
     double gf_per_s_alg = flops_alg * 1.0e-9f /(ms_elapsed_alg / 1000.0f);
 
     // Print diagnostics
-    printf("Global Memory Thread Coelesce Algorithm Performance Metrics: \n %.2f GFlops/s \n %.3f ms\n", gf_per_s_alg, ms_elapsed_alg);
+    printf("Shared Memory Cache Blocking Algorithm Performance Metrics: \n %.2f GFlops/s \n %.3f ms\n", gf_per_s_alg, ms_elapsed_alg);
 
     // Copy reuslt back to host memory
     device_to_host(C_d_cub, C_cub, size);
